@@ -7,6 +7,7 @@ from tabulate import tabulate ## pip install tabulate
 from csv import reader
 import tarfile
 from timeit import default_timer as timer
+import time
 from datetime import timedelta
 
 _ONE_GIG_       = 1073741824
@@ -115,6 +116,11 @@ def createDownloads (content_dir, archive_dir, filename_string, num_bytes):
     
     ## clean out any previous existing .gz files e.g., WRCP-1_of_5.tar.gz,  WRCP-1_of_5.tar.gz
     files = os.listdir(working_dir)
+    ## Check to make sure they are ok to delete existing achives
+    if len (files) > 0:
+        answer = input("DELETE previous .tar.gz programs??? [Yes/No]")
+        if answer.lower() != 'yes' and answer.lower() != 'y':
+                exit()
     for file in files:
         filename, file_extension = os.path.splitext(file)
         ## make sure previously created file by this program before removing
@@ -132,10 +138,10 @@ def createDownloads (content_dir, archive_dir, filename_string, num_bytes):
     if len(master_list) == 0:
         print ("  There are no files to archive")
         return
-    
+    lapse_time_list = []  ## keep track of time to archive each bucket to compute the average
     for i in range(len(master_list)):
         ## create archive file name: e.g., WRCP-1_of_5.tar.gz,  WRCP-2_of_5.tar.gz.
-        archive_filename = filename_string + "-" + str(i+1) + _Of_str + str(len(master_list)) + ".tar.gz" 
+        archive_filename = filename_string + "-" + str(i+1+8) + _Of_str + str(len(master_list)+8) + ".tar.gz" 
         archive_tar_gz_file = archive_dir + "/"+  _DOWNLOAD_DIR_ + "/" + archive_filename
 
         ## create directory
@@ -143,6 +149,10 @@ def createDownloads (content_dir, archive_dir, filename_string, num_bytes):
         print("Creating archive: " + archive_filename + " [%s]"%len(master_list[i]))
         print("----------------------------------------------------")
         tar = tarfile.open(archive_tar_gz_file, "w:gz")
+        ## Report current time:
+        t = time.localtime() 
+        print("Currrent Time:", time.strftime("%H:%M:%S", t))
+        print("-----------------------")
         ## time tar file creation
         start_time = timer()
         for k in range (len(master_list[i])):
@@ -151,7 +161,14 @@ def createDownloads (content_dir, archive_dir, filename_string, num_bytes):
         tar.close()
         print ()
         end_time = timer()
-        print("   Time:", timedelta(seconds= end_time - start_time))
+        lapse_time = end_time - start_time
+        lapse_time_list.append (lapse_time)
+        print("          Time:", timedelta(seconds= lapse_time))
+        lapse_times_count = len(lapse_time_list)
+        ## Computer average time to prepare archive 
+        sum = 0
+        for i in lapse_time_list: sum += i
+        print ("   Avg Time(%s): %s"%(lapse_times_count, timedelta(seconds= sum/lapse_times_count) ))
         print ()
     return
 
@@ -170,7 +187,7 @@ def predictBuckets (csv_file, max_bytes):
         for k in range (len(master_list[i])):
             bucket_size += int(master_list[i][k][_FILE_SIZE_])
             bucket_files += 1
-        buckets.append (['File %s of %s'%(i+1, num_buckets), bucket_files, bucket_size])
+        buckets.append (['File %s of %s'%(i+1+8, num_buckets+8), bucket_files, bucket_size])
     
     print()
     print(tabulate(buckets, headers=['Files (.tar.gz)', '# files','# bytes'], numalign="center", stralign="center", tablefmt="presto"))
