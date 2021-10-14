@@ -64,11 +64,12 @@ def loadDownloadPkgs (dir):
     start_time = timer()
     total_size = 0
     file_handle = open(csv_file, "a")  # append mode
+
     for file in files:
-        if os.path.isdir(file):
+        file_full_path = dir + '/' + file
+        if os.path.isdir(file_full_path):
             continue
         file_count += 1
-        file_full_path = dir + '/' + file
         file_size = os.path.getsize(file_full_path)
         total_size += file_size
         csv_row = file + ',' +  str(file_size) + ',' + file_full_path +  '\n'
@@ -140,7 +141,7 @@ def createDownloads (content_dir, archive_dir, filename_string, num_bytes):
             print()
             for file in tar_gz_files:
                 ## remove file
-                print ("   *** Deleting:", file)
+                print ("   *** Deleting:", os.path.basename(file))
                 os.remove(file)
         else:
             exit()
@@ -170,12 +171,15 @@ def createDownloads (content_dir, archive_dir, filename_string, num_bytes):
         
         if _VERBOSE_MODE_:
             t = time.localtime()
-            print("Currrent Time:", time.strftime("%H:%M:%S", t))
+            print("Starting Time:", time.strftime("%H:%M:%S", t))
             print("-----------------------")
         ## time tar file creation
         start_time = timer()
         for k in range (len(master_list[i])):
-            print ("   %s: adding:"%(k+1), master_list[i][k][_FILENAME_])
+            file_size = int ( int (master_list[i][k][_FILE_SIZE_]) / _BYTE_UNITS_ )
+            file_size_str = f'({file_size:,}'  + '%s)'%_UNIT_DISPLAY_ ## add ',' e.g., 1000 --> 1,000
+
+            print ("   %s: adding:"%(k+1), master_list[i][k][_FILENAME_], file_size_str)
             tar.add(master_list[i][k][_FILE_LOCATION_])
         tar.close()
         print ()
