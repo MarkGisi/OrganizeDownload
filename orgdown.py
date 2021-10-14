@@ -3,21 +3,31 @@ import os
 ## import sys
 import argparse
 from pathlib import Path
+from re import VERBOSE
+from typing import Any
 from tabulate import tabulate ## pip install tabulate
 from csv import reader
 import tarfile
 from timeit import default_timer as timer
 import time
 from datetime import timedelta
+from hurry.filesize import size, si  ## pretty print byte sizes (G=gig, M=meg, KB=kilobyte) # pip install hurry.filesize
 
-_ONE_GIG_       = 1073741824
-_DOWNLOAD_DIR_    = '__DOWNLOAD'
-_CSV_FILE_        = '_FILE_DATA.csv'
-_Of_str         = '_of_'
+_ONE_KB_            = 1024
+_ONE_MEG_           = 1048576
+_ONE_GIG_           = 1073741824
+_BYTE_UNITS_        = _ONE_MEG_
+_UNIT_DISPLAY_      = 'MB'
 
-_FILENAME_        = 0
-_FILE_SIZE_       = 1
-_FILE_LOCATION_   = 2
+_DOWNLOAD_DIR_      = '__DOWNLOAD'
+_CSV_FILE_          = '_FILE_DATA.csv'
+_Of_str             = '_of_'
+
+_FILENAME_          = 0
+_FILE_SIZE_         = 1
+_FILE_LOCATION_     = 2
+
+_VERBOSE_MODE_      = False
 
 def loadDownloadPkgs (dir):
     ## make download dir if it doesn't exist
@@ -30,8 +40,6 @@ def loadDownloadPkgs (dir):
     files = os.listdir(dir)
     files.sort()
     file_count = 0
-    # table_rows = []
-    # list_title = ['name', 'version', 'size', 'filename']
     csv_file = download_dir + '/' + _CSV_FILE_
 
     ## If csv file exists delete to create new one
@@ -43,7 +51,7 @@ def loadDownloadPkgs (dir):
             print ("        ", csv_file)
             print ("      File being used by another program")
             exit(0)
-        except Error as e:
+        except Any as e:
             print ("unhandled error occured")
             print (e)
             exit(0)
@@ -116,17 +124,26 @@ def createDownloads (content_dir, archive_dir, filename_string, num_bytes):
     
     ## clean out any previous existing .gz files e.g., WRCP-1_of_5.tar.gz,  WRCP-1_of_5.tar.gz
     files = os.listdir(working_dir)
-    ## Check to make sure they are ok to delete existing achives
-    if len (files) > 0:
-        answer = input("DELETE previous .tar.gz programs??? [Yes/No]")
-        if answer.lower() != 'yes' and answer.lower() != 'y':
-                exit()
+    tar_gz_files = []
     for file in files:
         filename, file_extension = os.path.splitext(file)
-        ## make sure previously created file by this program before removing
+        ## make sure existing .tar.gz file was created by this program before removing
         if os.path.isfile(working_dir + '/'+ file) and file_extension == '.gz' and _Of_str in filename:
-            ## remove file
-            os.remove(working_dir + '/'+ file)
+            tar_gz_files.append (working_dir + '/'+ file)
+
+    ## Check to make sure they are ok to delete existing achives
+    if len (tar_gz_files) > 0:
+        print ("   *** Do you want to DELETE previous created .tar.gz files in directory: ")
+        print ("          ", working_dir)
+        answer = input("       To DELETE please responded 'Yes': [Y/N] ")
+        if answer.lower() == 'yes' or answer.lower() == 'y':
+            print()
+            for file in tar_gz_files:
+                ## remove file
+                print ("   *** Deleting:", file)
+                os.remove(file)
+        else:
+            exit()
 
     master_list = GroupFilesinBuckets (csv_file, num_bytes)
 
@@ -141,7 +158,7 @@ def createDownloads (content_dir, archive_dir, filename_string, num_bytes):
     lapse_time_list = []  ## keep track of time to archive each bucket to compute the average
     for i in range(len(master_list)):
         ## create archive file name: e.g., WRCP-1_of_5.tar.gz,  WRCP-2_of_5.tar.gz.
-        archive_filename = filename_string + "-" + str(i+1+8) + _Of_str + str(len(master_list)+8) + ".tar.gz" 
+        archive_filename = filename_string + "-" + str(i+1) + _Of_str + str(len(master_list)+12) + ".tar.gz" 
         archive_tar_gz_file = archive_dir + "/"+  _DOWNLOAD_DIR_ + "/" + archive_filename
 
         ## create directory
@@ -150,9 +167,11 @@ def createDownloads (content_dir, archive_dir, filename_string, num_bytes):
         print("----------------------------------------------------")
         tar = tarfile.open(archive_tar_gz_file, "w:gz")
         ## Report current time:
-        t = time.localtime() 
-        print("Currrent Time:", time.strftime("%H:%M:%S", t))
-        print("-----------------------")
+        
+        if _VERBOSE_MODE_:
+            t = time.localtime()
+            print("Currrent Time:", time.strftime("%H:%M:%S", t))
+            print("-----------------------")
         ## time tar file creation
         start_time = timer()
         for k in range (len(master_list[i])):
@@ -160,16 +179,17 @@ def createDownloads (content_dir, archive_dir, filename_string, num_bytes):
             tar.add(master_list[i][k][_FILE_LOCATION_])
         tar.close()
         print ()
-        end_time = timer()
-        lapse_time = end_time - start_time
-        lapse_time_list.append (lapse_time)
-        print("          Time:", timedelta(seconds= lapse_time))
-        lapse_times_count = len(lapse_time_list)
-        ## Computer average time to prepare archive 
-        sum = 0
-        for i in lapse_time_list: sum += i
-        print ("   Avg Time(%s): %s"%(lapse_times_count, timedelta(seconds= sum/lapse_times_count) ))
-        print ()
+        if _VERBOSE_MODE_:
+            end_time = timer()
+            lapse_time = end_time - start_time
+            lapse_time_list.append (lapse_time)
+            print("          Time:", timedelta(seconds= lapse_time))
+            lapse_times_count = len(lapse_time_list)
+            ## Computer average time to prepare archive 
+            sum = 0
+            for i in lapse_time_list: sum += i
+            print ("   Avg Time(%s): %s"%(lapse_times_count, timedelta(seconds= sum/lapse_times_count) ))
+            print ()
     return
 
 def predictBuckets (csv_file, max_bytes):
@@ -181,16 +201,32 @@ def predictBuckets (csv_file, max_bytes):
         print ("  There are no files to archive")
         return
     buckets = []
+    total_files = 0
+    total_bytes = 0
     for i in range(len(master_list)):
         bucket_size = 0
         bucket_files = 0
         for k in range (len(master_list[i])):
-            bucket_size += int(master_list[i][k][_FILE_SIZE_])
+            
             bucket_files += 1
-        buckets.append (['File %s of %s'%(i+1+8, num_buckets+8), bucket_files, bucket_size])
+            bucket_size += int(master_list[i][k][_FILE_SIZE_])
+        the_size = int (bucket_size/_BYTE_UNITS_)
+        the_size_str = f'{the_size:,}' ## add ',' e.g., 1000 --> 1,000
+        ###the_size_str = '%s'%the_size
+        ###the_size_str = f'{the_size_str:>5}'
+        ##the_size_str = '{0: >10}'.format('%sM'%the_size)
+        bucket_files_str = f'{bucket_files:,}'
+        buckets.append (['File %s of %s'%(i+1, num_buckets+12), bucket_files_str, the_size_str])
+        total_files += bucket_files
+        total_bytes += bucket_size
+    buckets.append (['----------------', '----------------', '----------------'])
+
+    total_bytes_str = f'{int (total_bytes/_BYTE_UNITS_):,}' ## convert to byte units and add ',' e.g., 1000 --> 1,000
+    total_files_str = f'{total_files:,}'
+    buckets.append (['Archives: %s'%num_buckets, total_files_str , total_bytes_str])
     
     print()
-    print(tabulate(buckets, headers=['Files (.tar.gz)', '# files','# bytes'], numalign="center", stralign="center", tablefmt="presto"))
+    print(tabulate(buckets, headers=['Files (.tar.gz)', '# files','Size (%s)'%_UNIT_DISPLAY_], numalign="center",  stralign="center", tablefmt="presto"))
     print()
     return
 
@@ -219,21 +255,60 @@ def Main ():
     parser.add_argument ("-t", "--test", nargs="+", help="test fucntionality",\
                 default=[])
 
+    parser.add_argument ("-u", "--display_units",  help="Display units: 'bytes, 'kb', 'meg', 'gig'",\
+                default='meg')
+
     parser.add_argument ("-v", "--verbose", help="verbose mode - display progress",\
                  action="store_true", default=False)
 
     args = parser.parse_args()
-    VERBOSE_MODE    = args.verbose
 
+    global _VERBOSE_MODE_  ## need to declare global so assignment is accessable outside of def Main() 
+    _VERBOSE_MODE_ = args.verbose
+
+    global _BYTE_UNITS_
+    global _UNIT_DISPLAY_
+    if args.display_units == 'bytes':
+        _BYTE_UNITS_ = 1
+        _UNIT_DISPLAY_ = 'Bytes'
+    elif args.display_units == 'kb':
+        _BYTE_UNITS_ = _ONE_KB_
+        _UNIT_DISPLAY_ = 'KB'
+    elif args.display_units == 'meg':
+        _BYTE_UNITS_ = _ONE_MEG_
+        _UNIT_DISPLAY_ = 'MB'
+    elif args.display_units == 'gig':
+        _BYTE_UNITS_ = _ONE_GIG_
+        _UNIT_DISPLAY_ = 'GB'
+    else:
+        print ("  *** WARNING %s is not a valid diplay unit type.")
+        print ("      Options: 'bytes', 'kb', 'meg' and 'gig' ")
+        print ("      The system will default to 'meg'")
+
+    # file_count = 0
+    # ## file_handle = open('SourceCodeReceived.txt', "a")  # append mode
+    # dir = './Disclosures'
+    # with open('Disclosures.txt') as f:
+    #     lines = [line.rstrip() for line in f]
+
+    #     for file in lines:
+    #         if os.path.isdir(file):
+    #             continue
+    #         file_count += 1
+    #         cmd = 'touch "%s"/%s'%(dir, file)
+    #         output = os.popen(cmd)
+    #         a_list = output.readlines()
+    #     exit()
 
     if args.examples == True:
         print ("Examples:")
         print (' You will need to run the utility first with the -l (load) option to create a db of files and data. Then')
         print (' run a second time with the -c (create) option. You can also run with both at the same time. See examples below.')
-        print ('    python create_download.py -l "\productline\2.1\source_code"')
-        print ('    python create_download.py -p "\productline\2.1\source_code"')
-        print ('    python create_download.py -c "\productline\2.1\source_code"  -m 200000 -n WRCP-21.07')
-        print ('    python create_download.py -l "\productline\2.1\source_code" -c same -m 500000 -n WRCP-21.07')
+        print ('    python orgdown.py -l "\productline\2.1\source_code"')
+        print ('    python orgdown.py -p "\productline\2.1\source_code"')
+        print ('    python orgdown.py -c "\productline\2.1\source_code"  -m 200000 -n WRCP-21.07')
+        print ('    python orgdown.py -l "\productline\2.1\source_code" -c same -m 500000 -n WRCP-21.07')
+        print ('    python orgdown.py -v -u kb -p "\productline\2.1\source_code" -m 1450000000')
         exit()
 
     if args.predict != "":
