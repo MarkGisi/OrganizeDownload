@@ -29,6 +29,47 @@ _FILE_LOCATION_     = 2
 
 _VERBOSE_MODE_      = False
 
+
+def formatTime (time):
+    time_components = str (time).split(':') ##  ['0', '00', '00.204294']
+    seconds_microseconds = time_components[2].split('.') ##  ['00', '204294']
+    if seconds_microseconds[0] == '00':
+        seconds_str = '01'
+    else:
+        seconds_str = seconds_microseconds[0]
+
+    return '{0}:{1}:{2}'.format (time_components[0], time_components[1], seconds_str)
+
+def getByteSizeWithUnits (bytes, units, **options):
+    size = bytes/units
+    #### print (":", size)
+    if size <= .005:
+        result = round (size + .005, 3)
+        ####print ("=", size, result)
+    elif size <= .05:
+        result = round (size + .05, 2)
+        ####print ("=", size, result)
+    elif size <= .5:
+         result = round (size, 1)
+    elif size <= 1.5:
+        result = round (size, 1)
+        ####print ("=", size, result)
+    else:
+        result = round (size)
+        ####print ("=", size, result)
+
+    if 'comma' in options:
+        if options ['comma'] == True:
+            result_str = f'{result:,}'
+        else:
+            result_str = str(result)
+    
+    if 'disply_units' in options:
+         if options ['disply_units'] == True: 
+             result_str = "{0} {1}".format(result_str, _UNIT_DISPLAY_)
+
+    return result_str
+
 def loadDownloadPkgs (dir):
     ## make download dir if it doesn't exist
     download_dir = dir + '/' + _DOWNLOAD_DIR_
@@ -64,7 +105,6 @@ def loadDownloadPkgs (dir):
     start_time = timer()
     total_size = 0
     file_handle = open(csv_file, "a")  # append mode
-
     for file in files:
         file_full_path = dir + '/' + file
         if os.path.isdir(file_full_path):
@@ -73,16 +113,28 @@ def loadDownloadPkgs (dir):
         file_size = os.path.getsize(file_full_path)
         total_size += file_size
         csv_row = file + ',' +  str(file_size) + ',' + file_full_path +  '\n'
-        print ( '   ' + str(file_count) + ': ' +  file + ' (' +  str(file_size) + ')')
+        ####file_size_str = "(%s %s)"%(str(round (file_size/_BYTE_UNITS_,1)), _UNIT_DISPLAY_)
+        file_size_str = '[{0}]'.format (getByteSizeWithUnits (file_size, _BYTE_UNITS_, comma=True, disply_units=True))
+        ####file_size_str = str ( round (file_size /_BYTE_UNITS_, 1) ) + _UNIT_DISPLAY_ 
+        ####print ( '   ' + str(file_count) + ': ' +  file + ' (' +  file_size_str%s + ')')
+        print ( '   ' + str(file_count) + ': ' +  file + ' ' + file_size_str)
         file_handle.write(csv_row)
     file_handle.close()
     end_time = timer()
+    total_size_str = getByteSizeWithUnits (total_size, _BYTE_UNITS_, comma=True, disply_units=True)
+    time_taken_str = formatTime (timedelta(seconds= end_time - start_time))
+
+    ####print ("tyep:", type(time_taken))
     print("---------------------------------------------------")
     print ("     # Files:", str(file_count))
-    print ("     # Bytes:", str(total_size))
-    print ("        Time:", timedelta(seconds= end_time - start_time))
+    print ("        Size:", total_size_str)
+    print ("        Time:", time_taken_str)
     print("---------------------------------------------------")
     print()
+
+
+
+
 
 def GroupFilesinBuckets (csv_file, num_bytes):
  ## Group the files (one per row) into their respective archive buckets. 
@@ -119,8 +171,9 @@ def createDownloads (content_dir, archive_dir, filename_string, num_bytes):
     csv_file = working_dir + '/' + _CSV_FILE_
 
     if os.path.isfile(csv_file) == False:
+        print ()
         print ("  *** ERROR: csv file does not exist:", csv_file)
-        print ("  ***        Make sure to run the '-l' (--load) option first.")
+        print ("             Make sure to run the '-l' (--load) option first.")
         return
     
     ## clean out any previous existing .gz files e.g., WRCP-1_of_5.tar.gz,  WRCP-1_of_5.tar.gz
@@ -134,6 +187,7 @@ def createDownloads (content_dir, archive_dir, filename_string, num_bytes):
 
     ## Check to make sure they are ok to delete existing achives
     if len (tar_gz_files) > 0:
+        print()
         print ("   *** Do you want to DELETE previous created .tar.gz files in directory: ")
         print ("          ", working_dir)
         answer = input("       To DELETE please responded 'Yes': [Y/N] ")
@@ -159,7 +213,7 @@ def createDownloads (content_dir, archive_dir, filename_string, num_bytes):
     lapse_time_list = []  ## keep track of time to archive each bucket to compute the average
     for i in range(len(master_list)):
         ## create archive file name: e.g., WRCP-1_of_5.tar.gz,  WRCP-2_of_5.tar.gz.
-        archive_filename = filename_string + "-" + str(i+1) + _Of_str + str(len(master_list)+12) + ".tar.gz" 
+        archive_filename = filename_string + "-" + str(i+1) + _Of_str + str(len(master_list)) + ".tar.gz" 
         archive_tar_gz_file = archive_dir + "/"+  _DOWNLOAD_DIR_ + "/" + archive_filename
 
         ## create directory
@@ -176,10 +230,13 @@ def createDownloads (content_dir, archive_dir, filename_string, num_bytes):
         ## time tar file creation
         start_time = timer()
         for k in range (len(master_list[i])):
-            file_size = int ( int (master_list[i][k][_FILE_SIZE_]) / _BYTE_UNITS_ )
-            file_size_str = f'({file_size:,}'  + '%s)'%_UNIT_DISPLAY_ ## add ',' e.g., 1000 --> 1,000
+            ####file_size = int ( int (master_list[i][k][_FILE_SIZE_]) / _BYTE_UNITS_ )
+            file_size = int (master_list[i][k][_FILE_SIZE_])
+            ##file_size_str = f'({file_size:,}'  + '%s)'%_UNIT_DISPLAY_ ## add ',' e.g., 1000 --> 1,000
+            file_size_str = '[{0}]'.format (getByteSizeWithUnits (file_size, _BYTE_UNITS_, comma=True, disply_units=True))
+            print ("   {0}: adding: {1} {2}".format(k+1, master_list[i][k][_FILENAME_], file_size_str))
 
-            print ("   %s: adding:"%(k+1), master_list[i][k][_FILENAME_], file_size_str)
+            ####print ("   %s: adding:"%(k+1), master_list[i][k][_FILENAME_], file_size_str)
             tar.add(master_list[i][k][_FILE_LOCATION_])
         tar.close()
         print ()
@@ -187,12 +244,15 @@ def createDownloads (content_dir, archive_dir, filename_string, num_bytes):
             end_time = timer()
             lapse_time = end_time - start_time
             lapse_time_list.append (lapse_time)
-            print("          Time:", timedelta(seconds= lapse_time))
+            print("          Time:", formatTime (timedelta(seconds= lapse_time)))
+            ####  timedelta(seconds= lapse_time).replace('.','')) ## remove microseconds
             lapse_times_count = len(lapse_time_list)
             ## Computer average time to prepare archive 
             sum = 0
             for i in lapse_time_list: sum += i
-            print ("   Avg Time(%s): %s"%(lapse_times_count, timedelta(seconds= sum/lapse_times_count) ))
+            print ("   Avg Time({0}): {1}".format (lapse_times_count, formatTime (timedelta(seconds= sum/lapse_times_count))))
+            
+            ### timedelta(seconds= sum/lapse_times_count).replace('.','')  )) .replace('.','') ## remove microseconds
             print ()
     return
 
@@ -215,22 +275,24 @@ def predictBuckets (csv_file, max_bytes):
             bucket_files += 1
             bucket_size += int(master_list[i][k][_FILE_SIZE_])
         the_size = int (bucket_size/_BYTE_UNITS_)
-        the_size_str = f'{the_size:,}' ## add ',' e.g., 1000 --> 1,000
+        ####the_size_str = f'{the_size:,}' ## add ',' e.g., 1000 --> 1,000
+        the_size_str = getByteSizeWithUnits (bucket_size, _BYTE_UNITS_, comma=True, disply_units=True)
         ###the_size_str = '%s'%the_size
         ###the_size_str = f'{the_size_str:>5}'
         ##the_size_str = '{0: >10}'.format('%sM'%the_size)
         bucket_files_str = f'{bucket_files:,}'
-        buckets.append (['File %s of %s'%(i+1, num_buckets+12), bucket_files_str, the_size_str])
+        buckets.append (['File %s of %s'%(i+1, num_buckets), bucket_files_str, the_size_str])
         total_files += bucket_files
         total_bytes += bucket_size
     buckets.append (['----------------', '----------------', '----------------'])
 
-    total_bytes_str = f'{int (total_bytes/_BYTE_UNITS_):,}' ## convert to byte units and add ',' e.g., 1000 --> 1,000
+    ####total_bytes_str = f'{int (total_bytes/_BYTE_UNITS_):,}' ## convert to byte units and add ',' e.g., 1000 --> 1,000
     total_files_str = f'{total_files:,}'
+    total_bytes_str = getByteSizeWithUnits (total_bytes, _BYTE_UNITS_, comma=True, disply_units=True)
     buckets.append (['Archives: %s'%num_buckets, total_files_str , total_bytes_str])
     
     print()
-    print(tabulate(buckets, headers=['Files (.tar.gz)', '# files','Size (%s)'%_UNIT_DISPLAY_], numalign="center",  stralign="center", tablefmt="presto"))
+    print(tabulate(buckets, headers=['Files (.tar.gz)', '# files','Size'], numalign="center",  stralign="center", tablefmt="presto"))
     print()
     return
 
@@ -259,8 +321,8 @@ def Main ():
     parser.add_argument ("-t", "--test", nargs="+", help="test fucntionality",\
                 default=[])
 
-    parser.add_argument ("-u", "--display_units",  help="Display units: 'bytes, 'kb', 'meg', 'gig'",\
-                default='meg')
+    parser.add_argument ("-u", "--display_units",  help="Display units: 'bytes (or b), 'kb', 'mb', 'gb'",\
+                default='mb')
 
     parser.add_argument ("-v", "--verbose", help="verbose mode - display progress",\
                  action="store_true", default=False)
@@ -272,23 +334,33 @@ def Main ():
 
     global _BYTE_UNITS_
     global _UNIT_DISPLAY_
-    if args.display_units == 'bytes':
+    units = args.display_units.lower() 
+    if units == 'bytes' or units == 'b':
         _BYTE_UNITS_ = 1
         _UNIT_DISPLAY_ = 'Bytes'
-    elif args.display_units == 'kb':
+    elif units == 'kb' or units == 'k':
         _BYTE_UNITS_ = _ONE_KB_
         _UNIT_DISPLAY_ = 'KB'
-    elif args.display_units == 'meg':
+    elif units == 'mb' or units == 'm':
         _BYTE_UNITS_ = _ONE_MEG_
         _UNIT_DISPLAY_ = 'MB'
-    elif args.display_units == 'gig':
+    elif units == 'gb' or units == 'g':
         _BYTE_UNITS_ = _ONE_GIG_
         _UNIT_DISPLAY_ = 'GB'
     else:
-        print ("  *** WARNING %s is not a valid diplay unit type.")
-        print ("      Options: 'bytes', 'kb', 'meg' and 'gig' ")
-        print ("      The system will default to 'meg'")
-
+        print ()
+        print ("  *** WARNING {0} is not a valid diplay unit type.".format(args.display_units))
+        print ("      Options: 'bytes' (or 'b'), 'kb', 'mb' and 'gb' ")
+        print ("      The system will default to 'mb'")
+        input ("  Enter any key to continue")
+    # not_done = True
+    # while not_done:
+    #     a = input ("bytes? : ")
+    #     if a.lower() == 'q':
+    #         not_done = False
+    #     else:
+    #         print ("|{}|".format (getByteSizeWithUnits (int(a), _BYTE_UNITS_, comma=True, disply_units=False)))
+    # exit()
     # file_count = 0
     # ## file_handle = open('SourceCodeReceived.txt', "a")  # append mode
     # dir = './Disclosures'
@@ -320,11 +392,13 @@ def Main ():
         ## read directory data
         csv_file = working_dir + '/' + _CSV_FILE_
         if not os.path.exists(csv_file):
-            print ("   * ERROR: csv file does not exist:")
+            print()
+            print ("  *** ERROR: csv file does not exist:")
             print ("        %s"%csv_file)
-            print ("     You need to preform the -l option first to generate the csv file")
+            print ("      You need to preform the '-l' option first to generate the csv file")
+            print()
         else:
-            master_list = predictBuckets (csv_file, int(args.max_bytes))
+            master_list = predictBuckets (csv_file, int(args.max_bytes.replace(',', '')))
         exit()
 
 
@@ -347,9 +421,11 @@ def Main ():
                 dir = args.load
             else:
                 dir = args.create[0]
-            createDownloads (dir, dir, args.name, int(args.max_bytes))
+            createDownloads (dir, dir, args.name, int(args.max_bytes.replace(',', '')))
         else:
+            print()
             print ("  *** ERROR: incorrect number of arguments passed for option -c")
+            print()
             exit()
 
    
